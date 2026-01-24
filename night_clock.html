@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Night Clock</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+
+
+
+
+
+
+<style>
+    :root{
+        --accent: #4B8BBE;
+        --text: #B8DCEF;
+        --brightness: 1; /* 0..1 */
+    }
+
+    html,body { height:100%; margin:0; }
+    body{
+        font-family: Inter, Arial, sans-serif;
+        background: linear-gradient(180deg,#02030a 0%, #000 100%);
+        color:var(--text);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        overflow:hidden;
+        position:relative;
+        height:100vh;
+    }
+
+    /* main bg layer and dim overlay */
+    #bg-layer{
+        position:absolute; inset:0; z-index:0; pointer-events:none; overflow:hidden;
+        background: radial-gradient(ellipse at 20% 10%, rgba(40,55,80,0.14), transparent 12%),
+                    radial-gradient(ellipse at 80% 80%, rgba(10,20,30,0.2), transparent 18%),
+                    #000;
+        filter: none;
+    }
+    #dim-overlay {
+        position:absolute; inset:0; z-index:1; pointer-events:none;
+        background: rgba(0,0,0,0); transition: background .18s linear;
+    }
+
+    /* content (above overlay) */
+    #content { position:relative; z-index:2; width:100%; padding:16px; box-sizing:border-box; text-align:center; }
+
+    #time { font-size:120px; margin:0; font-weight:700; color: #dff5ff; text-shadow: 0 6px 18px rgba(0,0,0,0.7); }
+    #date { font-size:30px; margin:6px 0 12px 0; color:#95c7e6; }
+    #weather { font-size:26px; opacity:0.92; margin-top:6px; }
+    #condition { font-size:22px; opacity:0.86; margin-top:8px; }
+
+    /* Setup overlay */
+    #setup {
+        position:fixed; inset:0; z-index:11;
+        display:flex; flex-direction:column; align-items:center; gap:14px;
+        padding:22px; box-sizing:border-box;
+        background: linear-gradient(180deg, rgba(8,10,12,0.40), rgba(6,8,10,0.12));
+        backdrop-filter: blur(5px) saturate(0.85);
+    }
+    #setup h1 { margin:8px 0 0 0; color:#e6f7ff; font-size:26px; }
+    #setup p { margin:0; color:#bfe1f6; opacity:0.95; }
+
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+
+    .loc-btn {
+        display:inline-flex; align-items:center; gap:10px;
+        padding:10px 18px; border-radius:12px; border:1px solid rgba(255,255,255,0.04);
+        background: rgba(255,255,255,0.02); color:#e9f6ff; cursor:pointer;
+        transition: transform .12s, box-shadow .16s, border-color .12s;
+        font-size:16px;
+    }
+    .loc-btn:hover { transform: translateY(-3px); }
+    .loc-btn.selected {
+        box-shadow: 0 8px 30px rgba(34,58,126,0.34), 0 0 0 6px rgba(58,120,255,0.06);
+        border-color: rgba(58,120,255,0.18);
+        background: linear-gradient(180deg, rgba(58,120,255,0.03), rgba(255,255,255,0.01));
+    }
+
+    .btn-primary {
+        background:var(--accent);
+        color:white; border:none; padding:10px 16px; border-radius:10px; font-weight:700;
+        box-shadow: 0 6px 18px rgba(20,40,70,0.36);
+        cursor:pointer;
+    }
+
+    /* Background option cards — LEFT aligned now and brighter */
+    #bg-options {
+        display:flex;
+        gap:12px;
+        flex-wrap:wrap;
+        justify-content:flex-start; /* align to left */
+        align-items:flex-start;
+        margin-top:8px;
+    }
+
+    .bg-card {
+        width:150px; height:96px; border-radius:12px; overflow:hidden; position:relative;
+        /* brighter box background + subtle glass */
+        background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+        border:1px solid rgba(255,255,255,0.10);
+        cursor:pointer; box-sizing:border-box;
+        display:flex; align-items:center; justify-content:center;
+        transition: transform .12s, box-shadow .16s, border-color .12s, background .12s;
+    }
+    /* stronger hover to indicate interactivity */
+    .bg-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 14px 36px rgba(10,24,44,0.55);
+        background: linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.04));
+    }
+
+    /* selected state brighter and more visible */
+    .bg-card.selected {
+        transform: translateY(-6px);
+        box-shadow: 0 18px 48px rgba(10,24,44,0.65);
+        border-color: rgba(74,135,190,0.98);
+        background: linear-gradient(180deg, rgba(58,120,255,0.06), rgba(255,255,255,0.035));
+    }
+
+    .bg-card .preview { position:absolute; inset:0; pointer-events:none; }
+    .bg-card .label {
+        position:absolute; left:10px; bottom:8px; font-weight:700; font-size:14px; color:#012; /* darker text for contrast */
+        text-shadow: 0 1px 2px rgba(255,255,255,0.35);
+        display:flex; gap:8px; align-items:center;
+        background: rgba(255,255,255,0.85); padding:4px 8px; border-radius:8px;
+    }
+
+    /* make emoji/icon more visible */
+    .bg-card .label .emoji {
+        font-size:18px;
+        filter: drop-shadow(0 2px 6px rgba(0,0,0,0.35));
+    }
+
+    /* small controls */
+    #controls { position:fixed; right:12px; bottom:12px; z-index:12; display:flex; gap:8px; }
+    .small { padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.03); color:#cfe9ff; font-size:13px; cursor:pointer; }
+
+    /* mini previews */
+    .mini-drop { position:absolute; top:-10px; width:2px; height:32px; background:linear-gradient(180deg, rgba(255,255,255,0), rgba(255,255,255,0.8)); transform:rotate(-10deg); opacity:0.6; border-radius:1px; animation: miniFall linear infinite; }
+    @keyframes miniFall { to { transform: translateY(54px) rotate(-10deg); opacity:0.95; } }
+    .mini-star { position:absolute; width:3px; height:3px; border-radius:50%; background:radial-gradient(circle,#fff,#bfeaff); box-shadow:0 0 6px rgba(255,255,255,0.9); animation:miniFade linear infinite; }
+    @keyframes miniFade { 0% {opacity:1; transform:scale(1);}50%{opacity:0.25; transform:scale(0.7);}100%{opacity:1; transform:scale(1);} }
+    .mini-firefly { position:absolute; width:6px; height:6px; border-radius:50%; background:radial-gradient(circle,#fff8cc,#ffd87a); filter:blur(0.6px); animation:miniFloat linear infinite; }
+    @keyframes miniFloat { 0%{transform:translateY(0);}50%{transform:translateY(-8px);}100%{transform:translateY(0);} }
+
+    /* main background elements */
+    .drop { position:absolute; top:-10%; transform:rotate(-10deg); opacity:0.5; animation: fall linear infinite; pointer-events:none; border-radius:1px; will-change: transform, opacity, left; }
+    @keyframes fall { to { transform:translateY(140vh) rotate(-10deg); opacity:0.9; } }
+    .star { position:absolute; width:3px; height:3px; border-radius:50%; background:radial-gradient(circle,#fff,#d0ecff); box-shadow:0 0 10px rgba(200,240,255,0.7); animation:twinkle 3s ease-in-out infinite; }
+    @keyframes twinkle { 0%{opacity:1}50%{opacity:0.25}100%{opacity:1} }
+    .shoot { position:absolute; width:4px; height:2px; background:linear-gradient(90deg,#fff,#cfe9ff); border-radius:2px; box-shadow:0 0 10px rgba(200,240,255,0.9); transform:translate(-50%,-50%) rotate(-25deg); animation:shootAnim linear infinite; }
+    @keyframes shootAnim { from{transform:translate(-50%,-50%) translateX(-160vw) translateY(-160vh) scale(1); opacity:1} to{transform:translate(-50%,-50%) translateX(160vw) translateY(160vh) scale(0.6); opacity:0} }
+
+    /* CSS-only fireflies */
+    .firefly { position:absolute; width:8px; height:8px; border-radius:50%; background:radial-gradient(circle,#fffad0,#ffd87a); filter:blur(1px); pointer-events:none; animation: drift var(--dur,5s) ease-in-out var(--delay,0s) infinite; will-change: transform, opacity; }
+    @keyframes drift { 0% { transform: translate(0,0) scale(1); opacity:0.95; } 25% { transform: translate(calc(var(--dx) * 0.4), calc(var(--dy) * -0.6)) scale(1.08); opacity:0.75; } 50% { transform: translate(calc(var(--dx)), calc(var(--dy))) scale(1.12); opacity:0.6; } 75% { transform: translate(calc(var(--dx) * -0.2), calc(var(--dy) * 0.5)) scale(0.95); opacity:0.8; } 100% { transform: translate(0,0) scale(1); opacity:0.95; } }
+
+    /* waves (kept CSS for previously used code but not used in UI) */
+    .wave-layer{ display:none; }
+
+    @media (max-width:600px){
+        #time { font-size:72px; }
+        .bg-card{ width:120px; height:72px; }
+    }
+</style>
+</head>
+<body>
+
+<div id="bg-layer"></div>
+<div id="dim-overlay"></div>
+
+<!-- Setup always shown first -->
+<div id="setup">
+    <h1>Night Clock Setup</h1>
+    <p>Choose how to get weather and pick a background.</p>
+
+    <div class="row" id="loc-buttons">
+        <button id="autoBtn" class="loc-btn" onclick="chooseAuto()">📍 Use my location</button>
+        <button id="fixedBtn" class="loc-btn" onclick="chooseFixed()">🏙️ Use fixed city</button>
+        <button id="startBtn" class="btn-primary" onclick="startNow()" style="display:none;">▶ Start</button>
+    </div>
+
+    <div style="width:100%; max-width:980px; margin-top:8px; text-align:left;">
+        <h3 style="margin:8px 0 6px 0; color:#dff5ff;">Background (choose 1 out of the 4!)</h3>
+        <div id="bg-options">
+            <div class="bg-card" data-bg="none" onclick="selectBg('none')">
+                <div class="preview" aria-hidden="true"></div>
+                <div class="label"><span class="emoji">⬜</span><span>None</span></div>
+            </div>
+
+            <div class="bg-card" data-bg="rain" onclick="selectBg('rain')">
+                <div class="preview" aria-hidden="true"></div>
+                <div class="label"><span class="emoji">🌧️</span><span>Rain</span></div>
+            </div>
+
+            <div class="bg-card" data-bg="stars" onclick="selectBg('stars')">
+                <div class="preview" aria-hidden="true"></div>
+                <div class="label"><span class="emoji">✨</span><span>Shooting Stars</span></div>
+            </div>
+
+            <div class="bg-card" data-bg="fireflies" onclick="selectBg('fireflies')">
+                <div class="preview" aria-hidden="true"></div>
+                <div class="label"><span class="emoji">🟡</span><span>Fireflies</span></div>
+            </div>
+        </div>
+
+        <hr style="width:100%; opacity:0.06; margin:16px 0;">
+
+        <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap;">
+            <div style="min-width:220px;">
+                <label for="brightnessRange" style="display:block; color:#dfeef9; margin-bottom:6px; font-weight:700;">Background Brightness</label>
+                <input id="brightnessRange" type="range" min="10" max="100" step="1" value="100" style="width:100%;">
+
+                <div id="brightnessValue" style="font-size:13px; color:#bfe1f6; margin-top:6px;">100%</div>
+            </div>
+
+            <div style="min-width:220px;">
+                <label for="perfSelect" style="display:block; color:#dfeef9; margin-bottom:6px; font-weight:700;">Performance</label>
+                <select id="perfSelect" style="padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.02); color:#eaf6ff; border:1px solid rgba(255,255,255,0.04);">
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                </select>
+                <div style="font-size:13px; color:#bfe1f6; margin-top:6px;">High = rich animation, Low = minimal CPU</div>
+            </div>
+        </div>
+    </div>
+
+    <p style="opacity:0.86; margin-top:10px; color:#cfe9ff;">You can change these later using the small controls in the corner (Background Change).</p>
+</div>
+
+<!-- Main content -->
+<div id="content">
+    <div id="date">Loading...</div>
+    <h1 id="time">--:--:--</h1>
+    <div id="weather">Loading weather...</div>
+    <div id="condition"></div>
+</div>
+
+<!-- small controls -->
+<div id="controls">
+    <button class="small" onclick="document.getElementById('setup').style.display='flex'">Background Change</button>
+    <button class="small" onclick="resetLocation()">Reset location</button>
+</div>
+
+<script>
+/* ---------------- Clock ---------------- */
+function updateClock(){
+    const now = new Date();
+    document.getElementById('time').textContent = now.toLocaleTimeString();
+    document.getElementById('date').textContent = now.toLocaleDateString(undefined, { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+/* ---------------- Weather ---------------- */
+function weatherDescription(code){
+    if (code === 0) return "☀️ Clear";
+    if (code <= 3) return "☁️ Cloudy";
+    if (code <= 48) return "🌫️ Fog";
+    if (code <= 67) return "🌧️ Rain";
+    if (code <= 77) return "❄️ Snow";
+    if (code <= 82) return "🌦️ Showers";
+    if (code >= 95) return "⛈️ Thunderstorm";
+    return "🌡️ Unknown";
+}
+function fetchWeather(lat,lon){
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`)
+    .then(r=>r.json())
+    .then(data=>{
+        const temp = data.current_weather.temperature;
+        const wind = data.current_weather.windspeed;
+        const code = data.current_weather.weathercode;
+        document.getElementById('weather').textContent = `🌡️ ${temp}°C   💨 ${wind} km/h`;
+        document.getElementById('condition').textContent = weatherDescription(code);
+    })
+    .catch(()=>{ document.getElementById('weather').textContent = 'Weather unavailable'; document.getElementById('condition').textContent = ''; });
+}
+
+/* ---------------- Load Weather (cached auto coords) -- REPLACED ---------------- */
+function loadWeather(){
+    const mode = localStorage.getItem('weatherMode');
+    if (!mode) return;
+
+    if (mode === 'auto'){
+        const lat = localStorage.getItem('autoLat');
+        const lon = localStorage.getItem('autoLon');
+
+        if (lat && lon) {
+            console.log('Using cached coords:', lat, lon);
+            fetchWeather(lat, lon);
+            return;
+        }
+
+        if (!navigator.geolocation) {
+            document.getElementById('weather').textContent = 'Geolocation not supported';
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(pos => {
+            const lat2 = pos.coords.latitude;
+            const lon2 = pos.coords.longitude;
+            localStorage.setItem('autoLat', lat2);
+            localStorage.setItem('autoLon', lon2);
+            console.log('Got location (load):', lat2, lon2);
+            fetchWeather(lat2, lon2);
+        }, err => {
+            console.error('Geolocation error (loadWeather):', err);
+            if (err.code === 1) {
+                document.getElementById('weather').textContent = 'Location blocked';
+            } else {
+                document.getElementById('weather').textContent = 'Location unavailable';
+            }
+        }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 5 * 60 * 1000 });
+    } else if (mode === 'fixed'){
+        const lat = parseFloat(localStorage.getItem('fixedLat'));
+        const lon = parseFloat(localStorage.getItem('fixedLon'));
+        if (lat && lon) fetchWeather(lat,lon);
+    }
+}
+
+/* ---------------- Setup behavior ---------------- */
+function setSelectedLoc(mode){
+    document.getElementById('autoBtn').classList.toggle('selected', mode === 'auto');
+    document.getElementById('fixedBtn').classList.toggle('selected', mode === 'fixed');
+    document.getElementById('startBtn').style.display = mode ? 'inline-block' : 'none';
+}
+
+/* chooseAuto -- REPLACED */
+function chooseAuto(){
+    localStorage.setItem('weatherMode','auto');
+    setSelectedLoc('auto');
+
+    if (!navigator.geolocation) {
+        alert('Geolocation is not supported by this browser.');
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(pos => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        localStorage.setItem('autoLat', lat);
+        localStorage.setItem('autoLon', lon);
+        console.log('Got location (auto):', lat, lon);
+        fetchWeather(lat, lon);
+        document.getElementById('startBtn').style.display = 'inline-block';
+    }, err => {
+        console.error('Geolocation error:', err);
+        if (err.code === 1) {
+            alert('Location permission was denied. Open browser/site settings and allow location access for this page.');
+        } else if (err.code === 2) {
+            alert('Position unavailable. Try again or use a fixed city.');
+        } else if (err.code === 3) {
+            alert('Location request timed out. Try again.');
+        } else {
+            alert('Could not get location: ' + (err.message || 'unknown error'));
+        }
+    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 5 * 60 * 1000 });
+}
+
+function chooseFixed(){
+    setSelectedLoc('fixed');
+    const city = prompt('Enter city name (Make Sure You Click OK, or it wont work):');
+    if (!city) { const prev = localStorage.getItem('weatherMode'); setSelectedLoc(prev||null); return; }
+    fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`)
+    .then(r=>r.json())
+    .then(data=>{
+        if (!data.results || data.results.length === 0){ alert('City not found'); const prev = localStorage.getItem('weatherMode'); setSelectedLoc(prev||null); return; }
+        const lat = data.results[0].latitude, lon = data.results[0].longitude;
+        localStorage.setItem('weatherMode','fixed'); localStorage.setItem('fixedLat',lat); localStorage.setItem('fixedLon',lon);
+        setSelectedLoc('fixed');
+    })
+    .catch(()=>{ alert('Geocoding error'); const prev = localStorage.getItem('weatherMode'); setSelectedLoc(prev||null); });
+}
+function startNow(){
+    document.getElementById('setup').style.display='none';
+    applySavedBackground();
+    loadWeather();
+}
+function resetLocation(){
+    localStorage.removeItem('weatherMode'); localStorage.removeItem('fixedLat'); localStorage.removeItem('fixedLon');
+    localStorage.removeItem('autoLat'); localStorage.removeItem('autoLon');
+    location.reload();
+}
+
+/* ---------------- Performance & Brightness helpers ---------------- */
+function getPerfMode(){
+    return localStorage.getItem('perfMode') || 'high';
+}
+function setPerfMode(m){
+    localStorage.setItem('perfMode', m);
+    applyBackground(currentBg);
+}
+function getCountsForPerf(){
+    const perf = getPerfMode();
+    if (perf === 'high') return { rain: 90, stars: 40, fireflies: 20 };
+    if (perf === 'medium') return { rain: 50, stars: 24, fireflies: 12 };
+    return { rain: 30, stars: 12, fireflies: 6 };
+}
+
+function setBrightnessPct(pct){
+    const b = Math.max(0.1, Math.min(1, pct/100));
+    localStorage.setItem('brightnessVal', pct);
+    const overlay = document.getElementById('dim-overlay');
+    overlay.style.background = `rgba(0,0,0,${(1 - b).toFixed(3)})`;
+    document.getElementById('brightnessValue').textContent = Math.round(pct) + '%';
+}
+
+/* ---------------- Background previews & main backgrounds ---------------- */
+const bgLayer = document.getElementById('bg-layer');
+let currentBg = localStorage.getItem('bgMode') || 'none';
+const cards = document.querySelectorAll('.bg-card');
+
+function buildCardPreview(card){
+    const mode = card.dataset.bg;
+    const preview = card.querySelector('.preview');
+    while(preview.firstChild) preview.removeChild(preview.firstChild);
+    preview.style.background = '';
+    if (mode === 'none') { preview.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02))'; return; }
+    if (mode === 'rain'){
+        preview.style.background = 'linear-gradient(180deg, rgba(0,8,20,0.6), rgba(2,6,12,0.45))';
+        for (let i=0;i<6;i++){
+            const d = document.createElement('div'); d.className='mini-drop';
+            d.style.left = (8 + i*20 + (Math.random()*6-3)) + 'px';
+            d.style.animationDuration = (0.5 + Math.random()*0.6) + 's';
+            d.style.animationDelay = (Math.random()*-0.9) + 's';
+            preview.appendChild(d);
+        }
+        const tint = document.createElement('div'); tint.style.position='absolute'; tint.style.inset=0; tint.style.background='linear-gradient(180deg, rgba(0,0,0,0.12), transparent 40%)'; preview.appendChild(tint);
+        return;
+    }
+    if (mode === 'stars'){
+        preview.style.background = 'linear-gradient(180deg, rgba(0,4,12,0.3), rgba(0,0,0,0.2))';
+        for (let i=0;i<5;i++){
+            const s = document.createElement('div'); s.className='mini-star';
+            s.style.left = (8 + Math.random()*120) + 'px'; s.style.top = (6 + Math.random()*64) + 'px';
+            s.style.animationDuration = (1 + Math.random()*1.6) + 's';
+            s.style.animationDelay = (Math.random()*-1.2) + 's';
+            preview.appendChild(s);
+        }
+        return;
+    }
+    if (mode === 'fireflies'){
+        preview.style.background = 'linear-gradient(180deg, rgba(0,6,10,0.18), rgba(0,0,0,0.16))';
+        for (let i=0;i<6;i++){
+            const f = document.createElement('div'); f.className='mini-firefly';
+            f.style.left = (8 + Math.random()*134) + 'px'; f.style.top = (8 + Math.random()*70) + 'px';
+            f.style.animationDuration = (1.6 + Math.random()*2) + 's';
+            f.style.animationDelay = (Math.random()*-1.6) + 's';
+            preview.appendChild(f);
+        }
+        return;
+    }
+}
+cards.forEach(c => buildCardPreview(c));
+
+function selectBg(mode){
+    currentBg = mode; localStorage.setItem('bgMode',mode);
+    document.querySelectorAll('.bg-card').forEach(c => c.classList.toggle('selected', c.dataset.bg === mode));
+    applyBackground(mode);
+    document.getElementById('startBtn').style.display = localStorage.getItem('weatherMode') ? 'inline-block' : 'none';
+}
+
+function clearBg(){
+    while (bgLayer.firstChild) bgLayer.removeChild(bgLayer.firstChild);
+    bgLayer.style.background = '';
+}
+
+/* firefly helper: set CSS variables for smooth drift */
+function createFirefly(el){
+    const dx = (Math.random()*120 - 60) + 'px';
+    const dy = (Math.random()*80 - 40) + 'px';
+    const dur = (4 + Math.random()*6) + 's';
+    const delay = (Math.random()*-6) + 's';
+    el.style.setProperty('--dx', dx);
+    el.style.setProperty('--dy', dy);
+    el.style.setProperty('--dur', dur);
+    el.style.setProperty('--delay', delay);
+}
+
+/* upgraded applyBackground using performance counts */
+function applyBackground(mode){
+    clearBg();
+    currentBg = mode;
+    localStorage.setItem('bgMode', mode);
+
+    const counts = getCountsForPerf();
+
+    if (mode === 'none'){
+        bgLayer.style.background = 'radial-gradient(ellipse at 30% 20%, rgba(40,55,80,0.08), transparent 12%), #000';
+        return;
+    }
+
+    if (mode === 'rain'){
+        const count = counts.rain;
+        for (let i = 0; i < count; i++){
+            const d = document.createElement('div'); d.className = 'drop';
+            const w = 1 + Math.random()*2.5;
+            const h = 40 + Math.random()*130;
+            const left = Math.random() * 120;
+            const dur = 0.8 + Math.random()*1.8;
+            const delay = Math.random()*-24;
+            const opacity = 0.12 + Math.random()*0.7;
+            d.style.width = w + 'px'; d.style.height = h + 'px';
+            d.style.left = left + 'vw';
+            d.style.animationDuration = dur + 's';
+            d.style.animationDelay = delay + 's';
+            d.style.opacity = opacity;
+            d.style.background = `linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,${Math.min(0.85,0.35 + Math.random()*0.5)}) 100%)`;
+            d.style.filter = 'blur(0.35px)';
+            bgLayer.appendChild(d);
+        }
+        const tint = document.createElement('div'); tint.style.position='absolute'; tint.style.inset = '0'; tint.style.background = 'linear-gradient(180deg, rgba(2,8,18,0.14), rgba(0,0,0,0.36))'; bgLayer.appendChild(tint);
+
+        const ripple = document.createElement('div'); ripple.style.position='absolute'; ripple.style.inset='0'; ripple.style.background='radial-gradient(circle at 50% 80%, rgba(50,70,100,0.06), transparent 20%)'; ripple.style.animation = 'none'; bgLayer.appendChild(ripple);
+        return;
+    }
+
+    if (mode === 'stars'){
+        const count = counts.stars;
+        for (let i=0;i<count;i++){
+            const s = document.createElement('div'); s.className='star';
+            s.style.left = (Math.random()*100) + 'vw'; s.style.top = (Math.random()*100) + 'vh';
+            s.style.animationDuration = (2 + Math.random()*3) + 's';
+            s.style.opacity = 0.25 + Math.random()*0.9;
+            bgLayer.appendChild(s);
+        }
+        const shootCount = Math.max(3, Math.round(counts.stars / 6));
+        for (let i=0;i<shootCount;i++){
+            const sh = document.createElement('div'); sh.className='shoot';
+            sh.style.left = (Math.random()*100) + 'vw'; sh.style.top = (Math.random()*100) + 'vh';
+            sh.style.animationDuration = (1.2 + Math.random()*1.6) + 's';
+            sh.style.animationDelay = (Math.random()*6) + 's';
+            bgLayer.appendChild(sh);
+        }
+        return;
+    }
+
+
+    if (mode === 'fireflies'){
+        const count = counts.fireflies;
+        for (let i=0;i<count;i++){
+            const f = document.createElement('div'); f.className='firefly';
+            f.style.left = (Math.random()*100) + 'vw';
+            f.style.top = (Math.random()*100) + 'vh';
+            createFirefly(f);
+            bgLayer.appendChild(f);
+        }
+        return;
+    }
+}
+
+/* apply saved background (cards and main layer) */
+function applySavedBackground(){
+    document.querySelectorAll('.bg-card').forEach(c => c.classList.toggle('selected', c.dataset.bg === currentBg));
+    applyBackground(currentBg);
+}
+
+/* init previews on cards */
+document.querySelectorAll('.bg-card').forEach(card => buildCardPreview(card));
+
+/* ---------------- UI init (load saved settings) ---------------- */
+window.addEventListener('load', ()=>{
+    document.getElementById('setup').style.display = 'flex';
+    const prevMode = localStorage.getItem('weatherMode');
+    if (prevMode) setSelectedLoc(prevMode);
+    if (prevMode) document.getElementById('startBtn').style.display='inline-block';
+    const perf = localStorage.getItem('perfMode') || 'high';
+    document.getElementById('perfSelect').value = perf;
+    const bval = parseInt(localStorage.getItem('brightnessVal') || '100', 10);
+    document.getElementById('brightnessRange').value = bval;
+    setBrightnessPct(bval);
+    document.querySelectorAll('.bg-card').forEach(c => c.classList.toggle('selected', c.dataset.bg === currentBg));
+    buildCardPreview(document.querySelector(`.bg-card[data-bg="${currentBg}"]`) || document.querySelector('.bg-card[data-bg="none"]'));
+});
+
+/* ---------------- controls: brightness and perf listeners ---------------- */
+document.getElementById('brightnessRange').addEventListener('input', (e)=>{
+    const v = parseInt(e.target.value, 10);
+    setBrightnessPct(v);
+});
+document.getElementById('perfSelect').addEventListener('change', (e)=>{
+    setPerfMode(e.target.value);
+});
+
+
+
+
+
+
+
+/* ---------------- auto weather refresh every 30s ---------------- */
+loadWeather();
+setInterval(loadWeather, 30 * 1000);
+</script>
+</body>
+</html>
